@@ -45,15 +45,20 @@ async fn list_projects(
     let limit = limit.unwrap_or(20).min(100);
     let skip = skip.unwrap_or(0);
 
-    let raw = if let Some(query) = q {
-        state.projects.search(&query).await?
-    } else if let Some(s) = status {
-        state.projects.list_by_status(&s).await?
+    let (raw, total) = if let Some(query) = q {
+        let r = state.projects.search(&query).await?;
+        let t = r.len() as u64;
+        (r, t)
+    } else if let Some(ref s) = status {
+        let r = state.projects.list_by_status(s, limit, skip).await?;
+        let t = state.projects.count_by_status(s).await?;
+        (r, t)
     } else {
-        state.projects.list_with_promotion(limit, skip).await?
+        let r = state.projects.list_with_promotion(limit, skip).await?;
+        let t = state.projects.count().await?;
+        (r, t)
     };
 
-    let total = state.projects.count().await?;
     let projects = enrich_projects(raw, state.inner()).await?;
 
     Ok(Json(json!({

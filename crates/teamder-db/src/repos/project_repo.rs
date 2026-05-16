@@ -58,15 +58,29 @@ impl ProjectRepo {
             .map_err(|e| TeamderError::Database(e.to_string()))
     }
 
-    pub async fn list_by_status(&self, status: &str) -> Result<Vec<Project>, TeamderError> {
+    pub async fn list_by_status(&self, status: &str, limit: i64, skip: u64) -> Result<Vec<Project>, TeamderError> {
+        use mongodb::options::FindOptions;
+        let opts = FindOptions::builder()
+            .limit(limit)
+            .skip(skip)
+            .sort(doc! { "is_promoted": -1, "created_at": -1 })
+            .build();
         let cursor = self
             .col
             .find(doc! { "status": status, "is_public": true })
+            .with_options(opts)
             .await
             .map_err(|e| TeamderError::Database(e.to_string()))?;
 
         cursor
             .try_collect()
+            .await
+            .map_err(|e| TeamderError::Database(e.to_string()))
+    }
+
+    pub async fn count_by_status(&self, status: &str) -> Result<u64, TeamderError> {
+        self.col
+            .count_documents(doc! { "status": status, "is_public": true })
             .await
             .map_err(|e| TeamderError::Database(e.to_string()))
     }
@@ -226,7 +240,7 @@ impl ProjectRepo {
 
     pub async fn count(&self) -> Result<u64, TeamderError> {
         self.col
-            .count_documents(doc! {})
+            .count_documents(doc! { "is_public": true })
             .await
             .map_err(|e| TeamderError::Database(e.to_string()))
     }
