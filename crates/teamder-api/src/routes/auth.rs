@@ -25,16 +25,18 @@ async fn register(
     req: Json<CreateUserRequest>,
     state: &State<AppState>,
 ) -> ApiResult<AuthResponse> {
+    let email = req.email.trim().to_lowercase();
+
     // Check if email already exists
     if state
         .users
-        .find_by_email(&req.email)
+        .find_by_email(&email)
         .await?
         .is_some()
     {
         return Err(TeamderError::Conflict(format!(
             "Email {} is already registered",
-            req.email
+            email
         ))
         .into());
     }
@@ -43,7 +45,7 @@ async fn register(
         .map_err(|e| TeamderError::Internal(e.to_string()))?;
 
     let mut user = User::new(
-        &req.email,
+        &email,
         password_hash,
         &req.name,
         &req.role,
@@ -96,16 +98,26 @@ async fn register(
 /// POST /api/v1/auth/login
 #[post("/login", data = "<req>")]
 async fn login(req: Json<LoginRequest>, state: &State<AppState>) -> ApiResult<AuthResponse> {
+    let email = req.email.trim().to_lowercase();
+
     let user = state
         .users
-        .find_by_email(&req.email)
-        .await?
-        .ok_or_else(|| TeamderError::Unauthorized)?;
+        .find_by_email(&email)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error during login for {}: {}", email, e);
+            e
+        })?
+        .ok_or_else(|| {
+            tracing::warn!("Login failed: no user found for email {}", email);
+            TeamderError::Unauthorized
+        })?;
 
     let valid = bcrypt::verify(&req.password, &user.password_hash)
         .map_err(|e| TeamderError::Internal(e.to_string()))?;
 
     if !valid {
+        tracing::warn!("Login failed: wrong password for email {}", email);
         return Err(TeamderError::Unauthorized.into());
     }
 
