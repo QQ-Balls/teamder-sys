@@ -75,14 +75,14 @@ impl StudyGroupRepo {
     }
 
     pub async fn checkin(&self, group_id: &str, user_id: &str) -> Result<(), TeamderError> {
-        let now = mongodb::bson::DateTime::now();
+        let now = chrono::Utc::now().to_rfc3339();
         self.col
             .update_one(
                 doc! { "_id": group_id, "members.user_id": user_id },
                 doc! {
                     "$set": {
-                        "members.$.last_checkin": now,
-                        "updated_at": now,
+                        "members.$.last_checkin": &now,
+                        "updated_at": &now,
                     },
                     "$inc": { "members.$.streak": 1 }
                 },
