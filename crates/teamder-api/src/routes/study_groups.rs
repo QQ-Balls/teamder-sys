@@ -151,6 +151,21 @@ async fn join_group(id: String, auth: AuthUser, state: &State<AppState>) -> ApiR
 /// POST /api/v1/study-groups/<id>/checkin  (auth)
 #[post("/<id>/checkin")]
 async fn checkin(id: String, auth: AuthUser, state: &State<AppState>) -> ApiResult<Value> {
+    let g = state.study_groups.find_by_id(&id).await?
+        .ok_or_else(|| TeamderError::NotFound(format!("Study group {} not found", id)))?;
+
+    let member = g.members.iter().find(|m| m.user_id == auth.0.sub)
+        .ok_or_else(|| TeamderError::Forbidden)?;
+
+    // Enforce once-per-day: compare UTC date of last_checkin with today
+    if let Some(last) = member.last_checkin {
+        let today = Utc::now().date_naive();
+        let last_date = last.date_naive();
+        if last_date == today {
+            return Err(TeamderError::Conflict("Already checked in today".into()).into());
+        }
+    }
+
     state.study_groups.checkin(&id, &auth.0.sub).await?;
     Ok(Json(json!({ "success": true, "message": "Check-in recorded!" })))
 }
