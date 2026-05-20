@@ -127,6 +127,38 @@ pub async fn chat_ws(
     }))
 }
 
+#[derive(serde::Deserialize)]
+pub struct SendMessageBody {
+    pub to_user_id: String,
+    pub content: String,
+}
+
+#[post("/messages", data = "<body>")]
+pub async fn send_message(
+    user: AuthUser,
+    body: Json<SendMessageBody>,
+    state: &State<AppState>,
+) -> ApiResult<MessageResponse> {
+    if body.content.trim().is_empty() {
+        return Err(teamder_core::error::TeamderError::Validation("Content cannot be empty".into()).into());
+    }
+    let user_name = state.users.find_by_id(&user.0.sub).await
+        .ok().flatten()
+        .map(|u| u.name)
+        .unwrap_or_default();
+
+    let m = Message::new(&user.0.sub, &body.to_user_id, &body.content);
+    let resp = build_msg_response(&m, &user_name);
+    let _ = state.messages.create(&m).await;
+
+    if let Ok(json) = serde_json::to_string(&resp) {
+        state.chat.send_to(&body.to_user_id, json.clone()).await;
+        state.chat.send_to(&user.0.sub, json).await;
+    }
+
+    Ok(Json(resp))
+}
+
 pub fn routes() -> Vec<rocket::Route> {
-    routes![list_conversations, message_history, chat_ws]
+    routes![list_conversations, message_history, chat_ws, send_message]
 }
