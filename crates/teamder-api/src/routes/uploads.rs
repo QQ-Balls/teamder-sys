@@ -65,7 +65,7 @@ async fn persist(
     std::fs::create_dir_all(&dir).map_err(|e| TeamderError::Internal(e.to_string()))?;
 
     let dest = dir.join(&filename);
-    file.persist_to(&dest)
+    file.move_copy_to(&dest)
         .await
         .map_err(|e| TeamderError::Internal(e.to_string()))?;
 
