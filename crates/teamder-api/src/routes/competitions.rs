@@ -215,6 +215,41 @@ async fn register_competition(
     Ok(Json(json!({ "success": true, "message": "Successfully registered" })))
 }
 
+/// GET /api/v1/competitions/<id>/registrations  (publisher-owner or admin)
+#[get("/<id>/registrations")]
+async fn list_registrations(
+    id: String,
+    auth: AuthUser,
+    state: &State<AppState>,
+) -> ApiResult<Value> {
+    let comp = state
+        .competitions
+        .find_by_id(&id)
+        .await?
+        .ok_or_else(|| TeamderError::NotFound(format!("Competition {} not found", id)))?;
+
+    let is_owner = comp.publisher_id.as_deref() == Some(&auth.0.sub);
+    if !is_owner && !auth.0.is_admin {
+        return Err(TeamderError::Forbidden.into());
+    }
+
+    // Batch-fetch user names so the frontend can display them.
+    let user_ids: Vec<&str> = comp.registrations.iter().map(|r| r.user_id.as_str()).collect();
+    let users = state.users.find_many_by_ids(&user_ids).await?;
+
+    let data: Vec<Value> = comp.registrations.iter().map(|r| {
+        let name = users.iter().find(|u| u.id == r.user_id).map(|u| u.name.clone()).unwrap_or_else(|| r.user_id.clone());
+        json!({
+            "user_id": r.user_id,
+            "name": name,
+            "team_name": r.team_name,
+            "registered_at": r.registered_at,
+        })
+    }).collect();
+
+    Ok(Json(json!({ "data": data })))
+}
+
 /// POST /api/v1/competitions/<id>/interest  (auth) — toggle "I'm interested"
 #[post("/<id>/interest")]
 async fn toggle_interest(
@@ -356,6 +391,7 @@ pub fn routes() -> Vec<Route> {
         update_competition,
         delete_competition,
         register_competition,
+        list_registrations,
         toggle_interest,
         set_winners
     ]
