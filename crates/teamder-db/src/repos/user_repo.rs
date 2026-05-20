@@ -52,7 +52,18 @@ impl UserRepo {
     }
 
     pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, TeamderError> {
-        let filter = doc! { "email": email };
+        // Use a case-insensitive regex so that accounts whose email was stored
+        // before normalisation (potentially with mixed casing) can still be
+        // found after the login route started lower-casing the input.
+        let escaped: String = email.trim().chars().fold(String::new(), |mut s, c| {
+            if r"\.+*?^${}[]|()" .contains(c) {
+                s.push('\\');
+            }
+            s.push(c);
+            s
+        });
+        let pattern = format!("^{}$", escaped);
+        let filter = doc! { "email": { "$regex": pattern, "$options": "i" } };
         self.col
             .find_one(filter)
             .await
